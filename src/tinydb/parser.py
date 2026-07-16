@@ -382,7 +382,15 @@ class Parser:
 
     def _parse_assignment(self):
         col = self._expect('IDENT').value
-        self._expect('OP')  # =
+        # Only '=' is legal in an UPDATE SET clause.  Accepting any OP
+        # token would silently allow nonsense like ``SET col + 1``.
+        token = self._peek()
+        if token is None or token.type != 'OP' or token.value != '=':
+            raise ParseError(
+                f"Expected '=' in SET clause, got {token.value!r}",
+                context=f"line {token.line}, column {token.column}",
+            )
+        self._advance()
         value = self._parse_value()
         return (col, value)
 

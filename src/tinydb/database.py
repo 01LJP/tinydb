@@ -5,6 +5,7 @@ subsystems behind a single :meth:`Database.execute` entry point that
 accepts raw SQL strings.
 """
 
+import copy
 from contextlib import contextmanager
 from typing import Any, Dict, List, Optional
 
@@ -345,6 +346,11 @@ class Database:
                 if not list(src):
                     continue
 
+            # Deep copy the original row BEFORE mutation.  The index manager
+            # needs to see the original (old) values so it can delete the
+            # stale index keys.
+            old_row = copy.deepcopy(row_dict)
+
             # Build the new values list.
             new_values = list(row.values)
             for col_name, val in ast.set_list:
@@ -355,9 +361,13 @@ class Database:
                 new_values[col_index[col_name]] = val
 
             self._check_constraints(table, new_values, exclude_record_id=row.record_id)
-            self._write_record_at(table, row.record_id, new_values)
+            # ``_write_record_at`` tombstones the old record and appends a new
+            # one, so record_id may change.  The new id is needed for the
+            # index update below.
+            new_record_id = self._write_record_at(table, row.record_id, new_values)
+            new_row = dict(zip([c.name for c in columns], new_values))
             self.index_manager.update_indexes(
-                ast.table, row_dict, row_dict, row.record_id
+                ast.table, old_row, new_row, new_record_id
             )
             affected += 1
 
@@ -442,20 +452,31 @@ class Database:
                             f"value {values[ci]!r} already exists in column {col.name!r}"
                         )
 
-    def _write_record_at(self, table: Table, record_id: int, values: list):
-        """Overwrite the record at *record_id* with *values*."""
+    def _write_record_at(self, table: Table, record_id: int, values: list) -> int:
+        """Replace the record at *record_id* with *values*.
+
+        The slotted-page layout cannot grow a record in place: a longer
+        value would overflow into the next slot.  To stay symmetric with
+        ``insert`` / ``delete`` we tombstone the old record and append a
+        fresh one (which may land on any page with enough free space).
+        Returns the new record_id.
+        """
         page_id = record_id >> 16
         slot_id = record_id & 0xFFFF
         page = self.buffer_pool.get_page(page_id)
-        from tinydb.storage.page import serialize_record
-        data = serialize_record(table.columns, values)
-        # Replace in-place: the slotted page format stores (offset, length).
-        # We overwrite the bytes and update the slot length.
-        offset, _old_len = page._read_slot(slot_id)
-        # Write new bytes at the same offset (assumes same length or smaller).
-        page.buf[offset:offset + len(data)] = data
-        page._write_slot(slot_id, offset, len(data))
+        page.delete_record(slot_id)
         self.buffer_pool.mark_dirty(page_id)
+
+        before_pages = set(table._page_ids)
+        new_record_id = table.insert(values)
+        # If a new page was allocated, persist the page list so the table
+        # can be rebuilt on restart.
+        if set(table._page_ids) != before_pages:
+            info = self.catalog.get_table(table.name)
+            info.page_ids = list(table._page_ids)
+            info.root_page_id = table.root_page_id
+            self.catalog.update_table_info(table.name, info)
+        return new_record_id
 
 
 # =========================================================================
