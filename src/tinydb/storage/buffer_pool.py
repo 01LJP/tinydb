@@ -38,6 +38,22 @@ class BufferPool:
 
         return page
 
+    def put(self, page_id: int, data: bytes) -> None:
+        """Replace a page's contents in the cache (used by WAL recovery).
+
+        Resets the page buffer to *data* and marks it dirty so the redo
+        lands on disk when the buffer pool is flushed.
+        """
+        if page_id not in self._cache:
+            self.get_page(page_id)
+        page = self._cache[page_id]
+        # Reinitialise the raw buffer to the redone image.
+        page.buf = bytearray(page.PAGE_SIZE)
+        page.buf[:len(data)] = data[:page.PAGE_SIZE]
+        page._read_header()
+        self._cache.move_to_end(page_id)
+        self._dirty.add(page_id)
+
     def mark_dirty(self, page_id: int) -> None:
         """Mark a page dirty so it is written back on eviction/flush."""
         self._dirty.add(page_id)

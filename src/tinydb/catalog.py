@@ -26,6 +26,7 @@ class TableInfo:
     name: str
     root_page_id: Optional[int] = None
     columns: List[ColumnDef] = field(default_factory=list)
+    page_ids: List[int] = field(default_factory=list)
 
 
 class Catalog:
@@ -130,6 +131,11 @@ class Catalog:
         self.columns[table_id] = list(columns)
         self._save()
         return table_id
+
+    def update_table_info(self, name: str, info: TableInfo):
+        """Persist updated TableInfo (e.g. after data pages are allocated)."""
+        self.tables[name] = info
+        self._save()
 
     def register_table_object(self, name: str, table_obj):
         """Register a live :class:`~tinydb.storage.table.Table` instance.

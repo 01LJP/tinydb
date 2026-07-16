@@ -28,6 +28,8 @@ class TransactionManager:
         self.file_manager = file_manager
         self.txn_counter = 0
         self.active_txns = set()
+        # txn_id -> {page_id : bytes}  snapshot of clean page images at BEGIN.
+        self._snapshots: dict = {}
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -59,15 +61,32 @@ class TransactionManager:
         self.wal.flush()
         self.active_txns.discard(txn_id)
 
+    def snapshot_before(self, txn_id: int, buffer_pool):
+        """Record a pre-transaction snapshot of every cached page image.
+
+        On rollback these bytes are restored so the buffer pool reverts to
+        its pre-transaction state.
+        """
+        snap = {}
+        for page_id, page in buffer_pool._cache.items():
+            snap[page_id] = bytes(page.buf)
+        self._snapshots[txn_id] = snap
+
     def rollback(self, txn_id: int):
         """Rollback a transaction: undo writes in reverse order, then abort.
 
         Uses the WAL to find every page this transaction touched and
-        restores the old_data on the buffer pool.
+        restores the old_data on the buffer pool.  As a fallback the
+        pre-transaction snapshot is restored for any page that was not
+        explicitly logged.
         """
         self._check_active(txn_id)
+        # Restore the pre-transaction snapshot for every cached page.
+        snap = self._snapshots.pop(txn_id, {})
+        for page_id, data in snap.items():
+            self.buffer_pool.put(page_id, data)
+        # Also apply WAL old_data in reverse for explicit log records.
         stack = self.get_txn_stack(txn_id)
-        # Apply old_data in reverse order.
         for rec in reversed(stack):
             if rec.old_data:
                 self.buffer_pool.put(rec.page_id, rec.old_data)
