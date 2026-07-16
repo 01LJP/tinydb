@@ -1,8 +1,9 @@
 """AST node definitions for tinydb SQL parser.
 
 All nodes are @dataclass for concise construction and readable repr().
-Expression nodes (BinaryExpr, ColumnRef, Literal) form the WHERE tree.
-Statement nodes are the top-level AST returned by the parser.
+Expression nodes (BinaryExpr, ColumnRef, Literal, AggregateExpr) form the
+WHERE tree and the SELECT list.  Statement nodes are the top-level AST
+returned by the parser.
 """
 
 from dataclasses import dataclass, field
@@ -33,8 +34,18 @@ class Literal:
     value: Any
 
 
+@dataclass
+class AggregateExpr:
+    """An aggregate function call: func(column), e.g. COUNT(*), SUM(price).
+
+    ``column`` is '*' for COUNT(*) and a column name otherwise.
+    """
+    func: str           # 'COUNT' | 'SUM' | 'AVG'
+    column: str         # column name or '*'
+
+
 # Type alias for any expression node.
-Expr = Any  # BinaryExpr | ColumnRef | Literal
+Expr = Any  # BinaryExpr | ColumnRef | Literal | AggregateExpr
 
 
 # =========================================================================
@@ -44,12 +55,13 @@ Expr = Any  # BinaryExpr | ColumnRef | Literal
 @dataclass
 class Select:
     """SELECT statement AST."""
-    columns: List[str]                              # ['*'] or ['col1', 'col2']
+    columns: List                              # ['*'] or [str | AggregateExpr]
     table: str
     where: Optional[Expr] = None
     order_by: Optional[Tuple[str, str]] = None      # (column, 'ASC'|'DESC')
     limit: Optional[int] = None
     offset: Optional[int] = None
+    group_by: Optional[str] = None                  # group-by column name
 
 
 @dataclass

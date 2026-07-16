@@ -12,7 +12,7 @@ from tinydb.ast_nodes import (
     Select, Insert, Update, Delete,
     CreateTable, DropTable, CreateIndex,
     Begin, Commit, Rollback,
-    BinaryExpr, ColumnRef, Literal,
+    BinaryExpr, ColumnRef, Literal, AggregateExpr,
     ColumnDefAST,
 )
 
@@ -236,6 +236,11 @@ class Parser:
         if self._match('WHERE'):
             where = self._parse_where()
 
+        group_by = None
+        if self._match('GROUP'):
+            self._expect('BY')
+            group_by = self._expect('IDENT').value
+
         order_by = None
         if self._match('ORDER'):
             self._expect('BY')
@@ -255,15 +260,38 @@ class Parser:
             order_by=order_by,
             limit=limit,
             offset=offset,
+            group_by=group_by,
         )
 
     def _parse_select_list(self) -> list:
         if self._match('STAR'):
             return ['*']
-        cols = [self._expect('IDENT').value]
+        cols = [self._parse_select_column()]
         while self._match('COMMA'):
-            cols.append(self._expect('IDENT').value)
+            cols.append(self._parse_select_column())
         return cols
+
+    def _parse_select_column(self):
+        """Parse one SELECT-list item: either an aggregate call or a column name."""
+        token = self._peek()
+        if token is None:
+            raise self._error("incomplete SELECT list")
+        if token.type in ('COUNT', 'SUM', 'AVG'):
+            func = self._advance().value
+            self._expect('LPAREN')
+            col_token = self._peek()
+            if col_token is None:
+                raise self._error("expected column name or '*'")
+            if col_token.type == 'STAR':
+                self._advance()
+                self._expect('RPAREN')
+                return AggregateExpr(func=func, column='*')
+            if col_token.type == 'IDENT':
+                self._advance()
+                self._expect('RPAREN')
+                return AggregateExpr(func=func, column=col_token.value)
+            raise self._error(f"unexpected token {col_token.value!r} in {func}(...)")
+        return self._expect('IDENT').value
 
     def _parse_order_by(self):
         col = self._expect('IDENT').value

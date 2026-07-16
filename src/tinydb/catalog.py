@@ -35,6 +35,7 @@ class Catalog:
         self.buffer_pool = buffer_pool
         self.tables: dict = {}      # name -> TableInfo
         self.columns: dict = {}     # table_id -> List[ColumnDef]
+        self._table_objects: dict = {}  # name -> storage.Table (live instances)
         self._next_table_id: int = 1
         self._load()
 
@@ -52,12 +53,26 @@ class Catalog:
             self.tables = {}
             self.columns = {}
             self._next_table_id = 1
+            # Reserve page 0 (catalog) so the file manager never hands it
+            # out as a data page.
+            self._reserve_catalog_page()
             return
 
         blob = pickle.loads(data)
         self.tables = blob['tables']
         self.columns = blob['columns']
         self._next_table_id = blob['next_table_id']
+
+    def _reserve_catalog_page(self):
+        """Ensure the file manager will never allocate page 0 as data.
+
+        Page 0 is permanently the catalog page.  On a fresh database the
+        file manager's next-id cursor is 0; bump it to 1 so the first
+        data-page allocation starts at page 1.
+        """
+        fm = self.buffer_pool.file_manager
+        if fm._next_page_id < 1:
+            fm._next_page_id = 1
 
     def _save(self):
         """Write the in-memory metadata back to the catalog page."""
@@ -115,6 +130,18 @@ class Catalog:
         self.columns[table_id] = list(columns)
         self._save()
         return table_id
+
+    def register_table_object(self, name: str, table_obj):
+        """Register a live :class:`~tinydb.storage.table.Table` instance.
+
+        The executor's PlanSelector uses this to find the in-memory Table
+        (with its allocated data pages) for a given table name.
+        """
+        self._table_objects[name] = table_obj
+
+    def get_table_object(self, name: str):
+        """Return the live Table instance for *name*, or None."""
+        return self._table_objects.get(name)
 
     def drop_table(self, name: str):
         """Drop a table by name.
