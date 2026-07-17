@@ -33,8 +33,6 @@
 - **WHEN** EXPLAIN `SELECT * FROM users JOIN orders ON ...`
 - **THEN** 输出包含 SeqScan → NestedLoopJoin 的计划树
 
-## MODIFIED Requirements
-
 ### Requirement: PlanSelector 支持多表扫描
 PlanSelector SHALL 为 JOIN 查询构建多表扫描管线。
 

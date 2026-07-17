@@ -4,5 +4,6 @@
   "openspec_tasks": "openspec/changes/tinydb-v02/tasks.md",
   "openspec_delta_spec": "openspec/changes/tinydb-v02/specs/cli-enhancement/spec.md",
   "handoff_context": "openspec/changes/tinydb-v02/.comet/handoff/design-context.json",
-  "handoff_markdown": "openspec/changes/tinydb-v02/.comet/handoff/design-context.md"
+  "handoff_markdown": "openspec/changes/tinydb-v02/.comet/handoff/design-context.md",
+  "archive_directory": "openspec/changes/archive/2026-07-17-tinydb-v02"
 }

@@ -1,4 +1,4 @@
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: 事务管理器并发安全
 TransactionManager SHALL 在并发环境下正确管理事务生命周期。

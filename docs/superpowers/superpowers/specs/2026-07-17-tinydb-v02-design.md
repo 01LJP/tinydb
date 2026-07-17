@@ -2,6 +2,8 @@
 comet_change: tinydb-v02
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-07-17-tinydb-v02
+status: final
 ---
 
 # TinyDB v0.2 深度技术设计

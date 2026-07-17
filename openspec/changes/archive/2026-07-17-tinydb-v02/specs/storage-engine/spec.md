@@ -1,4 +1,4 @@
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: BufferPool 线程安全
 BufferPool SHALL 使所有公共方法线程安全，通过内部锁保护共享状态。

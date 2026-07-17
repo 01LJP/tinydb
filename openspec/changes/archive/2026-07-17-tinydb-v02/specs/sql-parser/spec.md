@@ -1,4 +1,4 @@
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: SQL 词法分析器关键字集合
 词法分析器 SHALL 识别以下新增关键字：`JOIN`、`INNER`、`LEFT`、`RIGHT`、`CROSS`、`FULL`、`ON`、`AS`、`EXPLAIN`。新增关键字与现有关键字一样，不区分大小写。
@@ -10,8 +10,6 @@
 #### Scenario: EXPLAIN 关键字识别
 - **WHEN** 词法分析器遇到 `EXPLAIN`
 - **THEN** 生成类型为 `EXPLAIN` 的 Token
-
-## ADDED Requirements
 
 ### Requirement: JOIN 语法解析
 语法分析器 SHALL 解析 JOIN 子句，生成 JoinClause AST 节点。
