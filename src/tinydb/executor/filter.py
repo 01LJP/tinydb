@@ -63,7 +63,18 @@ class Filter:
             return op_fn(left, right)
 
         if isinstance(expr, ColumnRef):
-            return row.get(expr.name)
+            # Support qualified column references (table.column)
+            if expr.table:
+                return row.get(f"{expr.table}.{expr.name}")
+            # Try unqualified match first
+            val = row.get(expr.name)
+            if val is not None:
+                return val
+            # Try matching with any table prefix (for JOIN results)
+            for k, v in row.items():
+                if k.endswith(f".{expr.name}"):
+                    return v
+            return None
 
         if isinstance(expr, Literal):
             return expr.value

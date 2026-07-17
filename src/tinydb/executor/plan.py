@@ -24,7 +24,7 @@ class PlanSelector:
         self.catalog = catalog
         self.index_manager = index_manager
 
-    def select_scan(self, table_name, where_clause):
+    def select_scan(self, table_name, where_clause, prefix_columns=False, table_alias=None):
         """Return a physical scan operator for *table_name*.
 
         Currently always returns a :class:`SeqScan`.  *where_clause* is
@@ -46,4 +46,5 @@ class PlanSelector:
                 buffer_pool=self.catalog.buffer_pool,
             )
             table.root_page_id = info.root_page_id
-        return SeqScan(table, self.catalog, self.catalog.buffer_pool)
+        return SeqScan(table, self.catalog, self.catalog.buffer_pool,
+                        prefix_columns=prefix_columns, table_alias=table_alias)

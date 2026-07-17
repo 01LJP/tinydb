@@ -9,6 +9,7 @@ In-memory layout:
 """
 
 import pickle
+import threading
 from dataclasses import dataclass, field
 from typing import List, Optional
 
@@ -38,6 +39,7 @@ class Catalog:
         self.columns: dict = {}     # table_id -> List[ColumnDef]
         self._table_objects: dict = {}  # name -> storage.Table (live instances)
         self._next_table_id: int = 1
+        self._lock = threading.RLock()
         self._load()
 
     # ------------------------------------------------------------------
@@ -115,65 +117,62 @@ class Catalog:
     # ------------------------------------------------------------------
 
     def create_table(self, name: str, columns: list) -> int:
-        """Create a table and return its table_id.
+        """Create a table and return its table_id."""
+        with self._lock:
+            if name in self.tables:
+                raise ValueError(f"table '{name}' already exists")
 
-        Raises:
-            ValueError if a table with the given name already exists.
-        """
-        if name in self.tables:
-            raise ValueError(f"table '{name}' already exists")
+            table_id = self._next_table_id
+            self._next_table_id += 1
 
-        table_id = self._next_table_id
-        self._next_table_id += 1
-
-        info = TableInfo(table_id=table_id, name=name, columns=columns)
-        self.tables[name] = info
-        self.columns[table_id] = list(columns)
-        self._save()
-        return table_id
+            info = TableInfo(table_id=table_id, name=name, columns=columns)
+            self.tables[name] = info
+            self.columns[table_id] = list(columns)
+            self._save()
+            return table_id
 
     def update_table_info(self, name: str, info: TableInfo):
         """Persist updated TableInfo (e.g. after data pages are allocated)."""
-        self.tables[name] = info
-        self._save()
+        with self._lock:
+            self.tables[name] = info
+            self._save()
 
     def register_table_object(self, name: str, table_obj):
-        """Register a live :class:`~tinydb.storage.table.Table` instance.
-
-        The executor's PlanSelector uses this to find the in-memory Table
-        (with its allocated data pages) for a given table name.
-        """
-        self._table_objects[name] = table_obj
+        """Register a live Table instance."""
+        with self._lock:
+            self._table_objects[name] = table_obj
 
     def get_table_object(self, name: str):
         """Return the live Table instance for *name*, or None."""
-        return self._table_objects.get(name)
+        with self._lock:
+            return self._table_objects.get(name)
 
     def drop_table(self, name: str):
-        """Drop a table by name.
+        """Drop a table by name."""
+        with self._lock:
+            if name not in self.tables:
+                raise ValueError(f"table '{name}' does not exist")
 
-        Raises:
-            ValueError if the table does not exist.
-        """
-        if name not in self.tables:
-            raise ValueError(f"table '{name}' does not exist")
-
-        info = self.tables.pop(name)
-        self.columns.pop(info.table_id, None)
-        self._save()
+            info = self.tables.pop(name)
+            self.columns.pop(info.table_id, None)
+            self._save()
 
     def get_table(self, name: str) -> Optional[TableInfo]:
         """Return TableInfo for *name*, or None if not found."""
-        return self.tables.get(name)
+        with self._lock:
+            return self.tables.get(name)
 
     def get_columns(self, table_id: int) -> list:
         """Return the column list for *table_id*, or [] if unknown."""
-        return self.columns.get(table_id, [])
+        with self._lock:
+            return self.columns.get(table_id, [])
 
     def table_exists(self, name: str) -> bool:
         """Return True if a table named *name* exists."""
-        return name in self.tables
+        with self._lock:
+            return name in self.tables
 
     def get_next_table_id(self) -> int:
         """Return the next available table_id (without consuming it)."""
-        return self._next_table_id
+        with self._lock:
+            return self._next_table_id

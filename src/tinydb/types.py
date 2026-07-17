@@ -93,6 +93,10 @@ class StorageError(TinydbError):
     pass
 
 
+class JoinError(TinydbError):
+    pass
+
+
 def check_value_type(value: Any, data_type: DataType) -> bool:
     """检查值是否符合数据类型"""
     if value is None:

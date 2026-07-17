@@ -1,0 +1,8 @@
+{
+  "openspec_proposal": "openspec/changes/tinydb-v02/proposal.md",
+  "openspec_design": "openspec/changes/tinydb-v02/design.md",
+  "openspec_tasks": "openspec/changes/tinydb-v02/tasks.md",
+  "openspec_delta_spec": "openspec/changes/tinydb-v02/specs/cli-enhancement/spec.md",
+  "handoff_context": "openspec/changes/tinydb-v02/.comet/handoff/design-context.json",
+  "handoff_markdown": "openspec/changes/tinydb-v02/.comet/handoff/design-context.md"
+}
