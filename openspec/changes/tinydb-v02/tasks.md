@@ -70,5 +70,5 @@
 ## 8. 文档与收尾
 
 - [x] 8.1 更新 README.md 反映 v0.2 新功能
-- [ ] 8.2 更新 openspec/specs/ 目录下的主规格文件（合并 delta specs）
-- [ ] 8.3 清理 mydb.tdb 等运行时文件，更新 .gitignore
+- [x] 8.2 更新 openspec/specs/ 目录下的主规格文件（合并 delta specs）
+- [x] 8.3 清理 mydb.tdb 等运行时文件，更新 .gitignore
