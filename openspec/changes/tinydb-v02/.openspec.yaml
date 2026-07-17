@@ -1,0 +1,3 @@
+schema: spec-driven
+created: 2026-07-17
+goal: 在v0.1基础上实现三大功能：多表JOIN、并发控制、CLI增强
