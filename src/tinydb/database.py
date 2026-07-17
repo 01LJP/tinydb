@@ -11,10 +11,11 @@ from typing import Any, Dict, List, Optional
 
 from tinydb.lexer import Lexer
 from tinydb.parser import Parser
+from tinydb.concurrency import LockManager
 from tinydb.ast_nodes import (
     Select, Insert, Update, Delete,
     CreateTable, DropTable, CreateIndex,
-    Begin, Commit, Rollback,
+    Begin, Commit, Rollback, Explain,
     ColumnDefAST, AggregateExpr,
 )
 from tinydb.types import (
@@ -33,6 +34,7 @@ from tinydb.executor.filter import Filter
 from tinydb.executor.sort import Sort
 from tinydb.executor.limit import Limit
 from tinydb.executor.aggregate import Aggregate
+from tinydb.executor.join import NestedLoopJoin
 
 
 # =========================================================================
@@ -82,6 +84,7 @@ class Database:
             self.wal, self.buffer_pool, self.file_manager
         )
         self.index_manager = IndexManager(self.buffer_pool, self.catalog)
+        self.lock_manager = LockManager()
 
         # Currently-active transaction id (None if auto-commit mode).
         self._current_txn_id: Optional[int] = None
@@ -141,23 +144,62 @@ class Database:
         tokens = Lexer().tokenize(sql)
         ast = Parser(tokens).parse()
 
-        # --- DDL ---
+        # --- DDL: global write lock ---
+        if isinstance(ast, (CreateTable, DropTable, CreateIndex)):
+            with self.lock_manager.global_write_lock():
+                return self._dispatch(ast)
+
+        # --- Transaction control: global write lock ---
+        if isinstance(ast, (Begin, Commit, Rollback)):
+            with self.lock_manager.global_write_lock():
+                return self._dispatch(ast)
+
+        # --- SELECT: read lock on referenced tables ---
+        if isinstance(ast, Select):
+            tables = self._extract_tables(ast)
+            locks = [self.lock_manager.get_table_lock(t) for t in tables]
+            for lock in locks:
+                lock.acquire_read()
+            try:
+                return self._dispatch(ast)
+            finally:
+                for lock in reversed(locks):
+                    lock.release_read()
+
+        # --- INSERT/UPDATE/DELETE: write lock on target table ---
+        if isinstance(ast, (Insert, Update, Delete)):
+            with self.lock_manager.write_lock(ast.table):
+                return self._dispatch(ast)
+
+        # --- EXPLAIN: read lock (no data modification) ---
+        if isinstance(ast, Explain):
+            return self._dispatch(ast)
+
+        raise ValueError(f"unknown statement type: {type(ast).__name__}")
+
+    def _extract_tables(self, ast):
+        """Extract table names from a SELECT AST for lock acquisition."""
+        tables = set()
+        if ast.table:
+            tables.add(ast.table)
+        for join in ast.joins:
+            tables.add(join.table)
+        return list(tables)
+
+    def _dispatch(self, ast):
+        """Dispatch an AST node to the appropriate executor."""
         if isinstance(ast, CreateTable):
             return self._exec_create_table(ast)
         if isinstance(ast, DropTable):
             return self._exec_drop_table(ast)
         if isinstance(ast, CreateIndex):
             return self._exec_create_index(ast)
-
-        # --- Transaction control ---
         if isinstance(ast, Begin):
             return self._exec_begin()
         if isinstance(ast, Commit):
             return self._exec_commit()
         if isinstance(ast, Rollback):
             return self._exec_rollback()
-
-        # --- DML ---
         if isinstance(ast, Insert):
             return self._exec_insert(ast)
         if isinstance(ast, Select):
@@ -166,7 +208,8 @@ class Database:
             return self._exec_update(ast)
         if isinstance(ast, Delete):
             return self._exec_delete(ast)
-
+        if isinstance(ast, Explain):
+            return self._exec_explain(ast)
         raise ValueError(f"unknown statement type: {type(ast).__name__}")
 
     # ------------------------------------------------------------------
@@ -280,11 +323,34 @@ class Database:
     # ------------------------------------------------------------------
 
     def _exec_select(self, ast: Select) -> List[Dict[str, Any]]:
-        # Pick a physical scan operator.
         plan = PlanSelector(self.catalog, self.index_manager)
-        scan = plan.select_scan(ast.table, ast.where)
 
-        pipeline: Any = scan
+        # Build scan pipeline
+        if ast.joins:
+            # JOIN query: prefix columns for all tables
+            tables = ast.tables
+            first_table = tables[0] if tables else None
+            first_alias = first_table.alias if first_table else None
+            scan = plan.select_scan(ast.table, None,
+                                     prefix_columns=True,
+                                     table_alias=first_alias)
+
+            pipeline: Any = scan
+            for join in ast.joins:
+                pipeline = NestedLoopJoin(
+                    left_source=pipeline,
+                    right_table=join.table,
+                    join_type=join.join_type,
+                    on_condition=join.on_condition,
+                    catalog=self.catalog,
+                    buffer_pool=self.buffer_pool,
+                    left_alias=first_alias,
+                    right_alias=join.alias,
+                )
+        else:
+            # Single table query
+            scan = plan.select_scan(ast.table, ast.where)
+            pipeline = scan
 
         # WHERE
         if ast.where is not None:
@@ -397,6 +463,44 @@ class Database:
             affected += 1
 
         return {"affected_rows": affected}
+
+    # ------------------------------------------------------------------
+    # EXPLAIN
+    # ------------------------------------------------------------------
+
+    def _exec_explain(self, ast: Explain) -> dict:
+        """Build and return the execution plan for the inner statement."""
+        inner = ast.statement
+        plan_nodes = []
+
+        if isinstance(inner, Select):
+            if inner.joins:
+                plan_nodes.append({"type": "SeqScan", "table": inner.table})
+                for join in inner.joins:
+                    plan_nodes.append({
+                        "type": "NestedLoopJoin",
+                        "table": join.table,
+                        "join_type": join.join_type,
+                    })
+            else:
+                plan_nodes.append({"type": "SeqScan", "table": inner.table})
+
+            if inner.where is not None:
+                plan_nodes.append({"type": "Filter", "condition": str(inner.where)})
+
+            if inner.group_by:
+                plan_nodes.append({"type": "Aggregate", "group_by": inner.group_by})
+
+            if inner.order_by:
+                col, direction = inner.order_by
+                plan_nodes.append({"type": "Sort", "column": col, "order": direction})
+
+            if inner.limit is not None:
+                plan_nodes.append({"type": "Limit", "limit": inner.limit})
+        else:
+            plan_nodes.append({"type": type(inner).__name__})
+
+        return {"plan": plan_nodes}
 
     # ------------------------------------------------------------------
     # Internal helpers

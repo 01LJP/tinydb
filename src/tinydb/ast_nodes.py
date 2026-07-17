@@ -24,8 +24,9 @@ class BinaryExpr:
 
 @dataclass
 class ColumnRef:
-    """Reference to a column by name."""
+    """Reference to a column by name, optionally qualified with table name."""
     name: str
+    table: Optional[str] = None  # table name or alias for qualified refs (t.col)
 
 
 @dataclass
@@ -49,6 +50,26 @@ Expr = Any  # BinaryExpr | ColumnRef | Literal | AggregateExpr
 
 
 # =========================================================================
+# Table reference and JOIN nodes
+# =========================================================================
+
+@dataclass
+class TableRef:
+    """A table reference with optional alias."""
+    name: str
+    alias: Optional[str] = None
+
+
+@dataclass
+class JoinClause:
+    """A JOIN clause: JOIN table ON condition."""
+    table: str
+    join_type: str          # 'INNER' | 'LEFT' | 'CROSS'
+    on_condition: Optional[Expr] = None
+    alias: Optional[str] = None
+
+
+# =========================================================================
 # DML statement nodes
 # =========================================================================
 
@@ -56,7 +77,9 @@ Expr = Any  # BinaryExpr | ColumnRef | Literal | AggregateExpr
 class Select:
     """SELECT statement AST."""
     columns: List                              # ['*'] or [str | AggregateExpr]
-    table: str
+    table: str                                  # primary table name (kept for backward compat)
+    tables: List[TableRef] = field(default_factory=list)  # all table refs
+    joins: List[JoinClause] = field(default_factory=list)  # JOIN clauses
     where: Optional[Expr] = None
     order_by: Optional[Tuple[str, str]] = None      # (column, 'ASC'|'DESC')
     limit: Optional[int] = None
@@ -141,3 +164,9 @@ class Commit:
 class Rollback:
     """ROLLBACK statement AST."""
     pass
+
+
+@dataclass
+class Explain:
+    """EXPLAIN statement AST — wraps another statement."""
+    statement: Any

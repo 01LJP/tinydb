@@ -41,6 +41,8 @@ class Lexer:
         'ASC', 'DESC', 'BEGIN', 'COMMIT', 'ROLLBACK',
         'INT', 'FLOAT', 'TEXT', 'BOOL',
         'COUNT', 'SUM', 'AVG', 'GROUP',
+        'JOIN', 'INNER', 'LEFT', 'RIGHT', 'CROSS', 'FULL', 'OUTER',
+        'AS', 'EXPLAIN',
     }
 
     # Single-character punctuation map.
@@ -50,6 +52,7 @@ class Lexer:
         '(': 'LPAREN',
         ')': 'RPAREN',
         '*': 'STAR',
+        '.': 'DOT',
     }
 
     def tokenize(self, sql: str) -> List[Token]:

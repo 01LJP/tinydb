@@ -22,6 +22,7 @@ Each log record:
 
 import os
 import struct
+import threading
 import zlib
 from typing import List
 
@@ -96,6 +97,7 @@ class WAL:
     def __init__(self, wal_path: str):
         self.wal_path = wal_path
         self.file = None
+        self._write_lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -159,17 +161,18 @@ class WAL:
 
     def _write_record(self, txn_id: int, op_type: int, page_id: int = 0,
                       old_data: bytes = b'', new_data: bytes = b''):
-        """Append one binary log record to the WAL file."""
-        assert self.file is not None, 'WAL not open'
-        record = struct.pack(
-            WAL_RECORD_HDR_FMT,
-            txn_id, op_type, page_id, len(old_data), len(new_data),
-        )
-        record += old_data + new_data
-        checksum = zlib.crc32(record) & 0xFFFFFFFF
-        record += struct.pack('>I', checksum)
-        self.file.seek(0, 2)  # seek to end
-        self.file.write(record)
+        """Append one binary log record to the WAL file (thread-safe)."""
+        with self._write_lock:
+            assert self.file is not None, 'WAL not open'
+            record = struct.pack(
+                WAL_RECORD_HDR_FMT,
+                txn_id, op_type, page_id, len(old_data), len(new_data),
+            )
+            record += old_data + new_data
+            checksum = zlib.crc32(record) & 0xFFFFFFFF
+            record += struct.pack('>I', checksum)
+            self.file.seek(0, 2)  # seek to end
+            self.file.write(record)
 
     # ------------------------------------------------------------------
     # Flush

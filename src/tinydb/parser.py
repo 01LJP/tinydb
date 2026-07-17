@@ -11,9 +11,9 @@ from tinydb.types import ParseError
 from tinydb.ast_nodes import (
     Select, Insert, Update, Delete,
     CreateTable, DropTable, CreateIndex,
-    Begin, Commit, Rollback,
+    Begin, Commit, Rollback, Explain,
     BinaryExpr, ColumnRef, Literal, AggregateExpr,
-    ColumnDefAST,
+    ColumnDefAST, TableRef, JoinClause,
 )
 
 
@@ -95,6 +95,8 @@ class Parser:
             raise ParseError("empty input")
 
         keyword = token.type
+        if keyword == 'EXPLAIN':
+            return self._parse_explain()
         if keyword in ('CREATE', 'DROP'):
             return self._parse_ddl()
         if keyword in ('SELECT', 'INSERT', 'UPDATE', 'DELETE'):
@@ -229,8 +231,9 @@ class Parser:
         self._expect('SELECT')
         columns = self._parse_select_list()
         self._expect('FROM')
-        table_token = self._expect('IDENT')
-        table = table_token.value
+
+        # Parse FROM clause: table [AS alias] {JOIN ...}
+        tables, joins = self._parse_from_clause()
 
         where = None
         if self._match('WHERE'):
@@ -239,7 +242,13 @@ class Parser:
         group_by = None
         if self._match('GROUP'):
             self._expect('BY')
-            group_by = self._expect('IDENT').value
+            group_by_token = self._expect('IDENT')
+            group_by = group_by_token.value
+            # Support qualified column in GROUP BY
+            if self._peek() is not None and self._peek().type == 'DOT':
+                self._advance()
+                real_col = self._expect('IDENT').value
+                group_by = f"{group_by_token.value}.{real_col}"
 
         order_by = None
         if self._match('ORDER'):
@@ -255,13 +264,82 @@ class Parser:
 
         return Select(
             columns=columns,
-            table=table,
+            table=tables[0].name if tables else '',
+            tables=tables,
+            joins=joins,
             where=where,
             order_by=order_by,
             limit=limit,
             offset=offset,
             group_by=group_by,
         )
+
+    def _parse_from_clause(self):
+        """Parse FROM table_ref [AS alias] {JOIN table_ref [AS alias] ON condition}."""
+        # First table
+        table_name = self._expect('IDENT').value
+        alias = None
+        if self._match('AS'):
+            alias = self._expect('IDENT').value
+        tables = [TableRef(name=table_name, alias=alias)]
+
+        # JOIN clauses
+        joins = []
+        while True:
+            join = self._parse_join()
+            if join is None:
+                break
+            joins.append(join)
+
+        return tables, joins
+
+    def _parse_join(self):
+        """Parse optional [INNER|LEFT|CROSS] JOIN table [AS alias] ON condition."""
+        join_type = None
+        token = self._peek()
+
+        if token is None:
+            return None
+
+        # Check for join type prefix
+        if token.type in ('INNER', 'LEFT', 'CROSS'):
+            join_type = self._advance().value
+            # LEFT OUTER JOIN → LEFT JOIN
+            if join_type == 'LEFT' and self._peek() and self._peek().type == 'OUTER':
+                self._advance()
+        elif token.type == 'JOIN':
+            join_type = 'INNER'
+        else:
+            return None
+
+        self._expect('JOIN')
+        table_name = self._expect('IDENT').value
+        alias = None
+        if self._match('AS'):
+            alias = self._expect('IDENT').value
+
+        # ON condition (required for INNER/LEFT, optional for CROSS)
+        on_condition = None
+        if join_type != 'CROSS':
+            self._expect('ON')
+            on_condition = self._parse_where()
+        else:
+            # CROSS JOIN may optionally have ON
+            if self._match('ON'):
+                on_condition = self._parse_where()
+
+        return JoinClause(
+            table=table_name,
+            join_type=join_type,
+            on_condition=on_condition,
+            alias=alias,
+        )
+
+    def _parse_explain(self):
+        """Parse EXPLAIN statement."""
+        self._expect('EXPLAIN')
+        statement = self._parse_statement()
+        return Explain(statement=statement)
 
     def _parse_select_list(self) -> list:
         if self._match('STAR'):
@@ -288,13 +366,31 @@ class Parser:
                 return AggregateExpr(func=func, column='*')
             if col_token.type == 'IDENT':
                 self._advance()
+                # Check for qualified name in aggregate: COUNT(t.col)
+                col_name = col_token.value
+                if self._peek() is not None and self._peek().type == 'DOT':
+                    self._advance()
+                    real_col = self._expect('IDENT').value
+                    col_name = f"{col_token.value}.{real_col}"
                 self._expect('RPAREN')
-                return AggregateExpr(func=func, column=col_token.value)
+                return AggregateExpr(func=func, column=col_name)
             raise self._error(f"unexpected token {col_token.value!r} in {func}(...)")
-        return self._expect('IDENT').value
+        # Regular column — may be qualified: table.column
+        col_token = self._expect('IDENT')
+        if self._peek() is not None and self._peek().type == 'DOT':
+            self._advance()
+            real_col = self._expect('IDENT').value
+            return f"{col_token.value}.{real_col}"
+        return col_token.value
 
     def _parse_order_by(self):
-        col = self._expect('IDENT').value
+        col_token = self._expect('IDENT')
+        col = col_token.value
+        # Support qualified column in ORDER BY
+        if self._peek() is not None and self._peek().type == 'DOT':
+            self._advance()
+            real_col = self._expect('IDENT').value
+            col = f"{col_token.value}.{real_col}"
         direction = 'ASC'
         if self._match('ASC'):
             direction = 'ASC'
@@ -436,6 +532,11 @@ class Parser:
             raise self._error("expected expression term")
         if token.type == 'IDENT':
             self._advance()
+            # Check for qualified column name: table.column
+            if self._peek() is not None and self._peek().type == 'DOT':
+                self._advance()  # consume DOT
+                col_token = self._expect('IDENT')
+                return ColumnRef(name=col_token.value, table=token.value)
             return ColumnRef(name=token.value)
         if token.type == 'NUMBER':
             self._advance()
