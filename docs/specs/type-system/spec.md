@@ -42,3 +42,18 @@ The system SHALL enforce uniqueness for columns declared UNIQUE.
 #### Scenario: Reject duplicate in UNIQUE column
 - **WHEN** inserting a duplicate value into a UNIQUE column
 - **THEN** the system raises a constraint violation error
+
+### Requirement: Exception hierarchy
+The system SHALL provide a structured exception hierarchy for different error types.
+
+#### Scenario: JoinError for JOIN failures
+- **WHEN** a JOIN references a non-existent table
+- **THEN** the system raises a JoinError
+
+#### Scenario: ParseError for syntax errors
+- **WHEN** SQL syntax is invalid
+- **THEN** the system raises a ParseError with line/column context
+
+#### Scenario: ConstraintError for violations
+- **WHEN** a constraint is violated
+- **THEN** the system raises a ConstraintError with descriptive message

@@ -378,13 +378,6 @@ def repl(db):
                 print(f"Error: {e}")
             continue
 
-        # Highlight the input line
-        try:
-            import readline
-            # readline handles display; we just highlight in the prompt
-        except ImportError:
-            pass
-
         # Accumulate lines until a semicolon is seen.
         sql = line
         while not sql.strip().endswith(";"):
@@ -397,6 +390,9 @@ def repl(db):
         sql = sql.strip().rstrip(";").strip()
         if not sql:
             continue
+
+        # Show highlighted SQL
+        print(f"  \033[90m{_highlight_sql(sql)}\033[0m")
 
         try:
             result = db.execute(sql)

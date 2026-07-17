@@ -42,3 +42,25 @@ The system SHALL guarantee Atomicity, Consistency, Isolation (serializable singl
 #### Scenario: Atomicity — all or nothing
 - **WHEN** a transaction with multiple operations is rolled back
 - **THEN** none of the operations take effect
+
+### Requirement: Transaction manager concurrency safety (v0.2)
+TransactionManager SHALL correctly manage transaction lifecycle in concurrent environments.
+
+#### Scenario: Concurrent BEGIN
+- **WHEN** multiple threads call `begin()` simultaneously
+- **THEN** each transaction gets a unique txn_id, no conflicts
+
+#### Scenario: Concurrent COMMIT
+- **WHEN** multiple transactions commit simultaneously
+- **THEN** WAL records are written in correct order, each COMMIT record is complete
+
+#### Scenario: Concurrent ROLLBACK
+- **WHEN** one transaction rolls back while another commits
+- **THEN** the rollback does not affect the other transaction's state
+
+### Requirement: WAL write atomicity (v0.2)
+WAL SHALL guarantee single-record atomicity during concurrent writes.
+
+#### Scenario: Concurrent log_write
+- **WHEN** multiple transactions call `log_write()` simultaneously
+- **THEN** each log record is written completely, not interleaved with others

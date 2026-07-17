@@ -36,3 +36,29 @@ The system SHALL store table records within pages, supporting variable-length re
 #### Scenario: Read all records from table
 - **WHEN** scanning a table
 - **THEN** the system reads all pages belonging to that table and returns records
+
+### Requirement: BufferPool thread safety (v0.2)
+BufferPool SHALL make all public methods thread-safe via internal locking.
+
+#### Scenario: Concurrent get_page
+- **WHEN** multiple threads call `get_page(page_id)` simultaneously
+- **THEN** no data race occurs, each thread gets correct Page object
+
+#### Scenario: Concurrent put
+- **WHEN** one thread calls `put(page_id, data)` while another calls `get_page(page_id)`
+- **THEN** read returns either old or new data, never corrupted data
+
+#### Scenario: flush_all does not block reads
+- **WHEN** one thread runs `flush_all()` while another reads a cached page
+- **THEN** the read completes normally (operation-level locking)
+
+### Requirement: Catalog thread safety (v0.2)
+Catalog SHALL use recursive lock to protect metadata read/write operations.
+
+#### Scenario: Concurrent create_table
+- **WHEN** multiple threads call `create_table()` for different tables
+- **THEN** each table is created correctly, `_next_table_id` has no duplicates
+
+#### Scenario: Concurrent read and write
+- **WHEN** one thread reads `catalog.tables` while another creates a table
+- **THEN** the read sees a consistent snapshot

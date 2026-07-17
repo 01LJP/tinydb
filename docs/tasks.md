@@ -51,14 +51,68 @@
 - [x] 7.3 实现崩溃恢复（WAL 重放）
 - [x] 7.4 实现事务与执行器的集成
 
-## 8. CLI/REPL
+## 8. CLI/REPL（v0.1）
 
 - [x] 8.1 实现交互式 REPL 循环
 - [x] 8.2 实现结果表格格式化输出
 - [x] 8.3 实现多行输入支持（分号终止）
 
-## 9. 集成与测试
+## 9. 集成与测试（v0.1）
 
 - [x] 9.1 编写各模块单元测试
 - [x] 9.2 编写端到端集成测试
 - [x] 9.3 验证完整工作流（创建表→插入→查询→事务→持久化）
+
+## 10. 基础层扩展（v0.2 — JOIN）
+
+- [x] 10.1 lexer.py 添加 JOIN 相关关键字
+- [x] 10.2 ast_nodes.py 添加 JoinClause、TableRef、Explain 节点
+- [x] 10.3 parser.py 实现 JOIN/EXPLAIN/限定列名解析
+- [x] 10.4 types.py 添加 JoinError 异常类
+
+## 11. JOIN 执行器（v0.2）
+
+- [x] 11.1 executor/join.py 实现 NestedLoopJoin 算子
+- [x] 11.2 executor/scan.py 修改支持列名前缀
+- [x] 11.3 executor/filter.py 支持限定列名解析
+- [x] 11.4 executor/plan.py 支持 JOIN 管线构建
+- [x] 11.5 database.py 组装 JOIN 查询管线
+
+## 12. JOIN 测试（v0.2）
+
+- [x] 12.1 INNER JOIN 基本测试
+- [x] 12.2 LEFT JOIN 测试（含 NULL 填充）
+- [x] 12.3 CROSS JOIN 测试
+- [x] 12.4 表别名测试
+- [x] 12.5 多表链式 JOIN 测试
+- [x] 12.6 JOIN + 聚合组合测试
+
+## 13. 并发控制（v0.2）
+
+- [x] 13.1 concurrency.py 实现 ReadWriteLock
+- [x] 13.2 concurrency.py 实现 LockManager
+- [x] 13.3 buffer_pool.py 线程安全化
+- [x] 13.4 catalog.py 线程安全化
+- [x] 13.5 wal.py 写入锁
+- [x] 13.6 database.py 锁管理集成
+- [x] 13.7 connection.py 实现 ConnectionPool
+
+## 14. 并发测试（v0.2）
+
+- [x] 14.1 多线程并发 SELECT 测试
+- [x] 14.2 写操作阻塞读操作测试
+- [x] 14.3 并发 INSERT 串行化测试
+- [x] 14.4 ConnectionPool 生命周期测试
+
+## 15. CLI 增强（v0.2）
+
+- [x] 15.1 readline 行编辑和历史
+- [x] 15.2 SQL 语法高亮
+- [x] 15.3 executor/explain.py 执行计划
+- [x] 15.4 .explain/.dump/.version/.mode 元命令
+
+## 16. CLI 测试与集成（v0.2）
+
+- [x] 16.1 EXPLAIN 执行计划测试
+- [x] 16.2 .dump/.version/.mode 测试
+- [x] 16.3 全量回归测试（404 项全部通过）
